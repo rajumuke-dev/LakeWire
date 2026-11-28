@@ -11,6 +11,7 @@ import lakewire.storage.ObjectHead;
 import lakewire.storage.ObjectStore;
 import lakewire.storage.S3ObjectStore;
 import lakewire.storage.S3StorageConfig;
+import lakewire.storage.lkw1.Lkw1Batch;
 import lakewire.storage.lkw1.Lkw1Chunk;
 import lakewire.storage.lkw1.Lkw1Object;
 import lakewire.storage.lkw1.Lkw1Reader;
@@ -54,6 +55,12 @@ final class InspectCommand {
                     .append(" maxTs=").append(chunk.maxTimestamp())
                     .append(" bytes=").append(chunk.records().length)
                     .append(System.lineSeparator());
+            }
+            String row = "  %-20s %-10s %-20s %-20s %-20s %-10s%n";
+            out.append(String.format(row, "topic", "part", "baseOffset", "maxTimestamp", "byteStart", "length"));
+            for (Lkw1Batch batch : Lkw1Reader.batches(bytes)) {
+                out.append(String.format(row, batch.topicId(), batch.part(), batch.baseOffset(),
+                    batch.maxTimestamp(), batch.byteStart(), batch.length()));
             }
             command.commandLine().getOut().print(out);
             return 0;

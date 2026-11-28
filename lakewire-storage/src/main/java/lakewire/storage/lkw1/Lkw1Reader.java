@@ -6,6 +6,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import lakewire.storage.Crc32c;
+import org.apache.kafka.common.record.internal.MemoryRecords;
+import org.apache.kafka.common.record.internal.MutableRecordBatch;
 
 public final class Lkw1Reader {
 
@@ -15,6 +17,26 @@ public final class Lkw1Reader {
     }
 
     public static Lkw1Object read(byte[] bytes) {
+        return decode(bytes).object();
+    }
+
+    /** One row per RecordBatch, in file order. {@code byteStart} is absolute (A29). */
+    public static List<Lkw1Batch> batches(byte[] bytes) {
+        Decoded decoded = decode(bytes);
+        List<Lkw1Batch> rows = new ArrayList<>();
+        List<Lkw1Chunk> chunks = decoded.object().chunks();
+        for (int i = 0; i < chunks.size(); i++) {
+            Lkw1Chunk chunk = chunks.get(i);
+            long start = decoded.starts()[i];
+            for (MutableRecordBatch batch : MemoryRecords.readableRecords(ByteBuffer.wrap(chunk.records())).batches()) {
+                rows.add(new Lkw1Batch(chunk.topicId(), chunk.part(), batch.baseOffset(), batch.maxTimestamp(), start, batch.sizeInBytes()));
+                start += batch.sizeInBytes();
+            }
+        }
+        return List.copyOf(rows);
+    }
+
+    private static Decoded decode(byte[] bytes) {
         if (bytes == null || bytes.length < 4 + 1 + 2 + 8 + 8 + 16) {
             throw new Lkw1Exception("LKW1 object is truncated");
         }
@@ -66,6 +88,7 @@ public final class Lkw1Reader {
 
         ByteBuffer entries = ByteBuffer.wrap(index);
         List<Lkw1Chunk> chunks = new ArrayList<>(indexLength / Lkw1Writer.ENTRY_BYTES);
+        long[] starts = new long[indexLength / Lkw1Writer.ENTRY_BYTES];
         while (entries.hasRemaining()) {
             long topicId = entries.getLong();
             int part = entries.getInt();
@@ -82,8 +105,13 @@ public final class Lkw1Reader {
             if (Crc32c.of(records) != expectedCrc) {
                 throw new Lkw1Exception("LKW1 chunk crc mismatch for topic " + topicId + " part " + part);
             }
+            starts[chunks.size()] = byteStart;
             chunks.add(new Lkw1Chunk(topicId, part, records, nRecords, nBatches, maxTimestamp));
         }
-        return new Lkw1Object(new String(brokerBytes, StandardCharsets.UTF_8), brokerEpoch, createdMs, List.copyOf(chunks));
+        Lkw1Object object = new Lkw1Object(new String(brokerBytes, StandardCharsets.UTF_8), brokerEpoch, createdMs, List.copyOf(chunks));
+        return new Decoded(object, starts);
+    }
+
+    private record Decoded(Lkw1Object object, long[] starts) {
     }
 }

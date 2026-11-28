@@ -14,4 +14,4 @@ lakewire verify --nemesis kill,pause --duration 3m --seed 42
 lakewire inspect object <key | s3://bucket/key | path>
 ```
 
-`inspect` decodes LKW1 without Postgres. `verify` is the M9 harness.
+`inspect` decodes LKW1 without Postgres and prints one row per RecordBatch (base offset, max timestamp, absolute byte start, length). `verify` is the M9 harness.
